@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       open_geocode_ref:
-        description: 'open-geocode git ref or commit SHA'
+        description: 'open-geocode git ref or commit SHA (leave empty for latest CI-green on main)'
         required: false
-        default: '08813468f8fbe491e6533e9c5101e56da5e9b29e'
+        default: ''
 
 concurrency:
   group: geocoder-build
@@ -25,7 +25,6 @@ concurrency:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/geocoder
-  OPEN_GEOCODE_REF: ${{ inputs.open_geocode_ref || '08813468f8fbe491e6533e9c5101e56da5e9b29e' }}
 
 jobs:
   build:
