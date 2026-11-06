@@ -7,7 +7,7 @@ Built to power type-ahead address validation and legal address verification in K
 ## Highlights
 
 - **Lightweight & Self-Contained:** Single distroless image (~1.6 GB) containing both the pure-Rust runtime and the compiled binary index. No external database, no Elasticsearch, no JVM.
-- **Fast:** Sub-millisecond latency on memory-mapped indices; ~1.5 GB RSS while serving.
+- **Low Overhead:** Single memory-mapped index (~1.54 GB) with ~1.5 GB RSS while serving.
 - **Typo-Tolerant:** Automatic Levenshtein typo correction and accent normalization (e.g. `Chaussestraße 111` finds `Chausseestraße 111`; `Gran Via` matches `Gran Vía`).
 - **Weekly Updates:** Automatically rebuilt every Sunday at 03:00 UTC from fresh [Geofabrik](https://download.geofabrik.de/) OpenStreetMap extracts.
 

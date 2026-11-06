@@ -85,6 +85,7 @@ jobs:
         run: |
           docker build \
             --tag geocoder:local-test \
+            --build-arg "OPEN_GEOCODE_REF=${OPEN_GEOCODE_REF}" \
             --label "org.opencontainers.image.title=KIVO Geocoder" \
             --label "org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode" \
             --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
@@ -114,20 +115,21 @@ jobs:
             exit 1
           fi
 
+          echo "Verifying root returns 404 (no demo UI)..."
+          root_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/)
+          [ "$root_code" = "404" ] || { echo "Expected 404 from root, got $root_code"; exit 1; }
+
           echo "Testing German typo address (Chausseestraße typo from issue #3767)..."
-          de_res=$(curl -sSf "http://127.0.0.1:8080/search?q=Chaussestra%C3%9Fe+111,+10115+Berlin&limit=1")
-          echo "DE response: ${de_res}"
-          echo "${de_res}" | grep -q "Chausseestraße"
+          curl -sSf "http://127.0.0.1:8080/search?q=Chaussestra%C3%9Fe+111,+10115+Berlin&limit=1" \
+            | jq -e '.features | length > 0 and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Chausseestraße"))'
 
           echo "Testing Spanish address (Madrid Gran Vía)..."
-          es_res=$(curl -sSf "http://127.0.0.1:8080/search?q=Gran+V%C3%ADa+28,+28013+Madrid&limit=1")
-          echo "ES response: ${es_res}"
-          echo "${es_res}" | grep -q "Gran Vía"
+          curl -sSf "http://127.0.0.1:8080/search?q=Gran+V%C3%ADa+28,+28013+Madrid&limit=1" \
+            | jq -e '.features | length > 0 and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Gran Vía"))'
 
           docker stop test-geocoder
           docker rm test-geocoder
           echo "All smoke tests passed on local image!"
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:

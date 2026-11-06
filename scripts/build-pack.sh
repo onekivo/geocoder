@@ -36,8 +36,9 @@ for r in germany spain; do
   fi
 done
 echo "Building combined DE+ES pack in ${PACK_DIR} (memory budget: ${MEMORY_BUDGET_MB} MiB)..."
-rm -rf "${PACK_DIR}"
-
+if [ -n "${PACK_DIR}" ] && [ "${PACK_DIR}" != "/" ] && [ "${PACK_DIR}" != "." ] && [ "${PACK_DIR}" != ".." ]; then
+  rm -rf "${PACK_DIR}"
+fi
 "${OPEN_GEOCODE_BIN}" pack build \
   --input "${PBF_DIR}/germany.osm.pbf" \
   --input "${PBF_DIR}/spain.osm.pbf" \
