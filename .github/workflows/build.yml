@@ -81,34 +81,21 @@ jobs:
         id: date
         run: echo "date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push container image
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:data-${{ steps.date.outputs.date }}
-          labels: |
-            org.opencontainers.image.title=KIVO Geocoder
-            org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=MIT
-
-      - name: Smoke test published image
+      - name: Build local container image for smoke testing
         run: |
-          echo "Starting geocoder container..."
-          docker run -d --name test-geocoder -p 8080:8080 "${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          docker build \
+            --tag geocoder:local-test \
+            --label "org.opencontainers.image.title=KIVO Geocoder" \
+            --label "org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.licenses=MIT AND ODbL-1.0" \
+            .
+
+      - name: Smoke test local image
+        run: |
+          echo "Starting geocoder test container..."
+          docker run -d --name test-geocoder -p 8080:8080 geocoder:local-test
 
           echo "Waiting for geocoder readiness at /readyz..."
           ready=false
@@ -139,4 +126,23 @@ jobs:
 
           docker stop test-geocoder
           docker rm test-geocoder
-          echo "Smoke tests passed successfully!"
+          echo "All smoke tests passed on local image!"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push verified image to GHCR
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          docker tag geocoder:local-test "${IMAGE_NAME}:latest"
+          docker tag geocoder:local-test "${IMAGE_NAME}:sha-${{ github.sha }}"
+          docker tag geocoder:local-test "${IMAGE_NAME}:data-${DATE}"
+
+          docker push "${IMAGE_NAME}:latest"
+          docker push "${IMAGE_NAME}:sha-${{ github.sha }}"
+          docker push "${IMAGE_NAME}:data-${DATE}"
+          echo "Successfully pushed verified image tags: latest, sha-${{ github.sha }}, data-${DATE}"

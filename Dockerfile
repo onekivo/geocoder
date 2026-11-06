@@ -20,6 +20,10 @@ RUN git clone "${OPEN_GEOCODE_REPO}" . \
 # Stage 2: Minimal runtime image
 # Distroless cc: glibc, libgcc and CA certificates only. No shell, no package manager, uid 65532.
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+LABEL org.opencontainers.image.title="KIVO Geocoder" \
+      org.opencontainers.image.description="Self-hosted geocoder for Germany and Spain based on open-geocode" \
+      org.opencontainers.image.licenses="MIT AND ODbL-1.0"
+
 
 # Copy the binary from the builder stage
 COPY --from=builder /src/target/release/open-geocode /usr/local/bin/open-geocode

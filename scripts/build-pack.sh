@@ -35,14 +35,13 @@ for r in germany spain; do
     exit 1
   fi
 done
-
-echo "Building combined DE+ES pack in ${PACK_DIR}/de-es (memory budget: ${MEMORY_BUDGET_MB} MiB)..."
-rm -rf "${PACK_DIR}/de-es"
+echo "Building combined DE+ES pack in ${PACK_DIR} (memory budget: ${MEMORY_BUDGET_MB} MiB)..."
+rm -rf "${PACK_DIR}"
 
 "${OPEN_GEOCODE_BIN}" pack build \
   --input "${PBF_DIR}/germany.osm.pbf" \
   --input "${PBF_DIR}/spain.osm.pbf" \
-  --pack "${PACK_DIR}/de-es" \
+  --pack "${PACK_DIR}" \
   --memory-budget-mb "${MEMORY_BUDGET_MB}"
 
-echo "Pack build complete: $(du -sh "${PACK_DIR}/de-es" | cut -f1)"
+echo "Pack build complete: $(du -sh "${PACK_DIR}" | cut -f1)"
