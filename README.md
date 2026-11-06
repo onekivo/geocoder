@@ -6,8 +6,9 @@ Built to power type-ahead address validation and legal address verification in K
 
 ## Highlights
 
-- **Lightweight & Self-Contained:** Single distroless image (~1.6 GB) containing both the pure-Rust runtime and the compiled binary index. No external database, no Elasticsearch, no JVM.
-- **Low Overhead:** Single memory-mapped index (~1.54 GB) with ~1.5 GB RSS while serving.
+- **Self-Contained:** One distroless image with the open-geocode binary and the pack. No external database, no Elasticsearch, no JVM.
+- **Size (ten countries, 2026-11-06 data):** a 4.06 GB pack of 67.4 M records; the image is 2.83 GB compressed. The pack is memory-mapped, so serving memory grows towards the pack size as queries touch it.
+- **Build:** about 75 minutes on a 4-core, 16 GB GitHub runner. Downloads take 12 minutes (France is the slowest), the pack 59 minutes. Peak build memory 7.3 GB, while training the address parser.
 - **Typo-Tolerant:** Automatic Levenshtein typo correction and accent normalization (e.g. `Chaussestraße 111` finds `Chausseestraße 111`; `Gran Via` matches `Gran Vía`).
 - **Weekly Updates:** Automatically rebuilt every Sunday at 03:00 UTC from fresh [Geofabrik](https://download.geofabrik.de/) OpenStreetMap extracts.
 
