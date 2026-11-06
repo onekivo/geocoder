@@ -1,0 +1,142 @@
+name: Build and Publish Geocoder Image
+
+on:
+  schedule:
+    # Weekly rebuild with latest OSM data extracts (Sundays at 03:00 UTC)
+    - cron: '0 3 * * 0'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+    inputs:
+      open_geocode_ref:
+        description: 'open-geocode git ref or commit SHA'
+        required: false
+        default: '08813468f8fbe491e6533e9c5101e56da5e9b29e'
+
+concurrency:
+  group: geocoder-build
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/geocoder
+  OPEN_GEOCODE_REF: ${{ inputs.open_geocode_ref || '08813468f8fbe491e6533e9c5101e56da5e9b29e' }}
+
+jobs:
+  build:
+    name: Build & Publish Image
+    runs-on: ${{ vars.ci_runner_large || 'ubuntu-latest' }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Free runner disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup 2>/dev/null || true
+          echo "Disk space after cleanup:"
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build open-geocode binary inside builder container
+        run: |
+          echo "Building open-geocode binary at commit ${OPEN_GEOCODE_REF}..."
+          docker build \
+            --target builder \
+            --build-arg "OPEN_GEOCODE_REF=${OPEN_GEOCODE_REF}" \
+            -t open-geocode-builder .
+
+          # Extract the compiled binary to the local workspace
+          container_id=$(docker create open-geocode-builder)
+          docker cp "${container_id}:/src/target/release/open-geocode" ./open-geocode
+          docker rm -v "${container_id}"
+          chmod +x ./open-geocode
+          ./open-geocode --help
+
+      - name: Build Germany & Spain address pack
+        run: |
+          OPEN_GEOCODE_BIN=./open-geocode \
+          MEMORY_BUDGET_MB=8192 \
+          bash scripts/build-pack.sh
+
+          # Remove raw PBF files to reclaim disk space before Docker image packaging
+          rm -rf pbf/
+          echo "Disk space after pack build and PBF removal:"
+          df -h /
+
+      - name: Get current date tag
+        id: date
+        run: echo "date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push container image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:data-${{ steps.date.outputs.date }}
+          labels: |
+            org.opencontainers.image.title=KIVO Geocoder
+            org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Smoke test published image
+        run: |
+          echo "Starting geocoder container..."
+          docker run -d --name test-geocoder -p 8080:8080 "${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+
+          echo "Waiting for geocoder readiness at /readyz..."
+          ready=false
+          for i in $(seq 1 30); do
+            if curl -sSf http://127.0.0.1:8080/readyz >/dev/null 2>&1; then
+              ready=true
+              echo "Geocoder became ready in ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "Error: Geocoder failed to become ready within 30s"
+            docker logs test-geocoder
+            exit 1
+          fi
+
+          echo "Testing German typo address (Chausseestraße typo from issue #3767)..."
+          de_res=$(curl -sSf "http://127.0.0.1:8080/search?q=Chaussestra%C3%9Fe+111,+10115+Berlin&limit=1")
+          echo "DE response: ${de_res}"
+          echo "${de_res}" | grep -q "Chausseestraße"
+
+          echo "Testing Spanish address (Madrid Gran Vía)..."
+          es_res=$(curl -sSf "http://127.0.0.1:8080/search?q=Gran+V%C3%ADa+28,+28013+Madrid&limit=1")
+          echo "ES response: ${es_res}"
+          echo "${es_res}" | grep -q "Gran Vía"
+
+          docker stop test-geocoder
+          docker rm test-geocoder
+          echo "Smoke tests passed successfully!"
