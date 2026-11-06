@@ -7,7 +7,7 @@ Built to power type-ahead address validation and legal address verification in K
 ## Highlights
 
 - **Self-Contained:** One distroless image with the open-geocode binary and the pack. No external database, no Elasticsearch, no JVM.
-- **Size (ten countries, 2026-11-06 data):** a 4.06 GB pack of 67.4 M records; the image is 2.83 GB compressed. The pack is memory-mapped, so serving memory grows towards the pack size as queries touch it.
+- **Size (ten countries, 2026-11-06 data):** a 4.06 GB pack of 67.4 M records, which is most of the image. The pack is memory-mapped, so serving memory grows towards the pack size as queries touch it.
 - **Build:** about 75 minutes on a 4-core, 16 GB GitHub runner. Downloads take 12 minutes (France is the slowest), the pack 59 minutes. Peak build memory 7.3 GB, while training the address parser.
 - **Typo-Tolerant:** Automatic Levenshtein typo correction and accent normalization (e.g. `Chaussestraße 111` finds `Chausseestraße 111`; `Gran Via` matches `Gran Vía`).
 - **Weekly Updates:** Automatically rebuilt every Sunday at 03:00 UTC from fresh [Geofabrik](https://download.geofabrik.de/) OpenStreetMap extracts.
@@ -74,7 +74,7 @@ Everything happens inside `docker build`:
 
 1. `builder` compiles `open-geocode` at `OPEN_GEOCODE_REF`.
 2. One `pbf-<country>` stage per extract downloads it from Geofabrik and checks its published MD5 (`scripts/fetch-extract.sh`). BuildKit runs them in parallel.
-3. `pack` bind-mounts every extract and builds the pack; its scratch files are deleted in the same `RUN`, so the stage keeps only the pack. `open-geocode pack verify` checks it.
+3. `pack` bind-mounts every extract and builds the pack; its scratch files and the build's `audit/` folder (every skipped OSM object, 2.9 GB for ten countries) are deleted in the same `RUN`, so the stage keeps only the pack. `open-geocode pack verify` checks it, and the build report is printed into the build log.
 4. The distroless runtime copies the binary and the pack. No extract or scratch file reaches the final image.
 
 ```bash

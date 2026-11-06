@@ -116,33 +116,39 @@ jobs:
 
           # One address per country. Every check runs before the step fails,
           # so a run shows every country that does not answer, not just the
-          # first. `rooftop` marks the checks that also require the exact
-          # house to be in the data.
+          # first. The label must name the street and the town: a rooftop hit
+          # in another town (`Grand-Rue 1, Luxembourg` once returned the
+          # Grand-Rue in Wasserbillig) is a wrong answer, not a match.
+          # `rooftop` marks the checks that also need the exact house.
           failed=0
           check() {
-            local q="$1" street="$2" need="${3:-}"
+            local q="$1" street="$2" town="$3" need="${4:-}"
             local res
-            res=$(curl -sSf --get --data-urlencode "q=${q}" --data limit=1 http://127.0.0.1:8080/search)
+            if ! res=$(curl -sSf --get --data-urlencode "q=${q}" --data limit=1 http://127.0.0.1:8080/search); then
+              echo "::error::${q}: request failed"
+              failed=1
+              return
+            fi
             echo "${q} -> $(jq -c '.features[0].properties | {label, accuracy}' <<<"${res}")"
-            if ! jq -e --arg s "${street}" --arg need "${need}" '
+            if ! jq -e --arg s "${street}" --arg t "${town}" --arg need "${need}" '
                 (.features | length > 0)
-                and (.features[0].properties.label | contains($s))
+                and (.features[0].properties.label | contains($s) and contains($t))
                 and ($need == "" or .features[0].properties.accuracy == $need)' <<<"${res}" >/dev/null; then
-              echo "::error::${q} did not resolve to ${street} ${need}"
+              echo "::error::${q} did not resolve to ${street}, ${town} ${need}"
               failed=1
             fi
           }
-          check "Chaussestraße 111, 10115 Berlin" "Chausseestraße" rooftop
-          check "Gran Vía 28, 28013 Madrid" "Gran Vía" rooftop
-          check "Getreidegase 9, 5020 Salzburg" "Getreidegasse" rooftop
-          check "Bundesplatz 3, 3005 Bern" "Bundesplatz"
-          check "Rue de Rivoli 99, 75001 Paris" "Rue de Rivoli"
-          check "Grand-Place 1, 1000 Bruxelles" "Grand-Place"
-          check "Dam 1, 1012 Amsterdam" "Dam"
-          check "Rue du Marché-aux-Herbes 17, Luxembourg" "Marché-aux-Herbes"
-          check "10 Downing Street, London" "Downing Street"
-          check "Royal Avenue 1, Belfast" "Royal Avenue"
-          check "Grafton Street, Dublin" "Grafton Street"
+          check "Chaussestraße 111, 10115 Berlin" "Chausseestraße" "Berlin" rooftop
+          check "Gran Vía 28, 28013 Madrid" "Gran Vía" "Madrid" rooftop
+          check "Getreidegase 9, 5020 Salzburg" "Getreidegasse" "Salzburg" rooftop
+          check "Bahnhofstrasse 10, 8001 Zürich" "Bahnhofstrasse" "Zürich" rooftop
+          check "Rue de Rivoli 99, 75001 Paris" "Rue de Rivoli" "Paris"
+          check "Avenue Louise 54, 1050 Bruxelles" "Avenue Louise" "" rooftop
+          check "Damrak 1, 1012 Amsterdam" "Damrak" "Amsterdam" rooftop
+          check "Rue du Marché-aux-Herbes 17, Luxembourg" "Marché-aux-Herbes" "Luxembourg"
+          check "10 Downing Street, London" "Downing Street" "Westminster"
+          check "Royal Avenue 1, Belfast" "Royal Avenue" "Belfast"
+          check "Grafton Street, Dublin" "Grafton Street" "Dublin"
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder
@@ -162,7 +168,9 @@ jobs:
       - name: Push verified image to GHCR
         if: github.ref == 'refs/heads/main'
         run: |
-          DATE="${{ steps.date.outputs.date }}"
+          # The data tag carries the run id: the date alone repeats when a
+          # second run happens the same day, and a tag must name one build.
+          DATE="${{ steps.date.outputs.date }}-${{ github.run_id }}"
           OG_TAG="${{ steps.og_ref.outputs.short_ref }}"
           docker tag geocoder:local-test "${IMAGE_NAME}:latest"
           docker tag geocoder:local-test "${IMAGE_NAME}:sha-${{ github.sha }}"

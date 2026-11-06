@@ -53,7 +53,10 @@ RUN fetch-extract ireland-and-northern-ireland
 
 # --- The pack -------------------------------------------------------------------
 # Reads every extract through a bind mount and keeps its scratch inside the same
-# RUN, so this stage's only layer is the finished pack.
+# RUN, so this stage's only layer is the finished pack. `pack build` also writes
+# an audit/ folder next to the pack: every OSM object it skipped (2.9 GB for ten
+# countries) and a build report. `serve` never reads it, so the RUN prints the
+# report into the build log and deletes the folder.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS pack
 ARG PACK_MEMORY_MB=8192
 COPY --from=builder /src/target/release/open-geocode /usr/local/bin/open-geocode
@@ -75,7 +78,9 @@ RUN --mount=type=bind,from=pbf-germany,source=/pbf,target=/in/de \
       --scratch-dir /scratch \
       --memory-budget-mb "${PACK_MEMORY_MB}"; \
     rm -rf /scratch; \
-    open-geocode pack verify --pack /packs/pack
+    open-geocode pack verify --pack /packs/pack; \
+    cat /packs/pack/generations/*/audit/build-report.json | head -c 2000; echo; \
+    rm -rf /packs/pack/generations/*/audit
 
 # --- Runtime --------------------------------------------------------------------
 # Distroless cc: glibc, libgcc and CA certificates only. No shell, no package
