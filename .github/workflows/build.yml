@@ -30,7 +30,9 @@ jobs:
   build:
     name: Build & Publish Image
     runs-on: ${{ vars.ci_runner_large || 'ubuntu-latest' }}
-    timeout-minutes: 90
+    # Ten countries: about 18 GB of downloads, then the pack. GitHub-hosted
+    # jobs stop at 6 hours.
+    timeout-minutes: 240
     permissions:
       contents: read
       packages: write
@@ -47,8 +49,6 @@ jobs:
           echo "Disk space after cleanup:"
           df -h /
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
       - name: Resolve latest open-geocode ref
         id: og_ref
         env:
@@ -71,57 +71,33 @@ jobs:
             echo "short_ref=${latest_sha:0:7}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build open-geocode binary inside builder container
-        run: |
-          ref="${{ steps.og_ref.outputs.ref }}"
-          echo "Building open-geocode binary at commit ${ref}..."
-          docker build \
-            --target builder \
-            --build-arg "OPEN_GEOCODE_REF=${ref}" \
-            -t open-geocode-builder .
-          # Extract the compiled binary to the local workspace
-          container_id=$(docker create open-geocode-builder)
-          docker cp "${container_id}:/src/target/release/open-geocode" ./open-geocode
-          docker rm -v "${container_id}"
-          chmod +x ./open-geocode
-          ./open-geocode --help
-
-      - name: Build Germany & Spain address pack
-        run: |
-          OPEN_GEOCODE_BIN=./open-geocode \
-          MEMORY_BUDGET_MB=8192 \
-          bash scripts/build-pack.sh
-
-          # Remove raw PBF files to reclaim disk space before Docker image packaging
-          rm -rf pbf/
-          echo "Disk space after pack build and PBF removal:"
-          df -h /
-
       - name: Get current date tag
         id: date
         run: echo "date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
-      - name: Build local container image for smoke testing
+      # One build: the binary, one download stage per country (in parallel),
+      # the pack, then the runtime. Plain `docker build` on the runner's own
+      # daemon, so the image lands in the local store the smoke test runs.
+      # OSM_DATE makes every run download fresh extracts instead of reusing a
+      # cached layer.
+      - name: Build image
         run: |
-          ref="${{ steps.og_ref.outputs.ref }}"
           docker build \
             --tag geocoder:local-test \
-            --build-arg "OPEN_GEOCODE_REF=${ref}" \
-            --label "org.opencontainers.image.title=KIVO Geocoder" \
-            --label "org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode" \
+            --build-arg "OPEN_GEOCODE_REF=${{ steps.og_ref.outputs.ref }}" \
+            --build-arg "OSM_DATE=${{ steps.date.outputs.date }}" \
             --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            --label "org.opencontainers.image.licenses=MIT AND ODbL-1.0" \
             .
+          docker image ls geocoder:local-test
+          df -h /
 
       - name: Smoke test local image
         run: |
-          echo "Starting geocoder test container..."
           docker run -d --name test-geocoder -p 8080:8080 geocoder:local-test
 
-          echo "Waiting for geocoder readiness at /readyz..."
           ready=false
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if curl -sSf http://127.0.0.1:8080/readyz >/dev/null 2>&1; then
               ready=true
               echo "Geocoder became ready in ${i}s"
@@ -129,29 +105,54 @@ jobs:
             fi
             sleep 1
           done
-
           if [ "$ready" != "true" ]; then
-            echo "Error: Geocoder failed to become ready within 30s"
+            echo "::error::Geocoder failed to become ready within 60s"
             docker logs test-geocoder
             exit 1
           fi
 
-          echo "Verifying root returns 404 (no demo UI)..."
           root_code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/)
-          [ "$root_code" = "404" ] || { echo "Expected 404 from root, got $root_code"; exit 1; }
+          [ "$root_code" = "404" ] || { echo "::error::Expected 404 from /, got $root_code"; exit 1; }
 
-          echo "Testing German typo address (Chausseestraße typo from issue #3767)..."
-          curl -sSf "http://127.0.0.1:8080/search?q=Chaussestra%C3%9Fe+111,+10115+Berlin&limit=1" \
-            | jq -e '(.features | length > 0) and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Chausseestraße"))'
+          # One address per country. Every check runs before the step fails,
+          # so a run shows every country that does not answer, not just the
+          # first. `rooftop` marks the checks that also require the exact
+          # house to be in the data.
+          failed=0
+          check() {
+            local q="$1" street="$2" need="${3:-}"
+            local res
+            res=$(curl -sSf --get --data-urlencode "q=${q}" --data limit=1 http://127.0.0.1:8080/search)
+            echo "${q} -> $(jq -c '.features[0].properties | {label, accuracy}' <<<"${res}")"
+            if ! jq -e --arg s "${street}" --arg need "${need}" '
+                (.features | length > 0)
+                and (.features[0].properties.label | contains($s))
+                and ($need == "" or .features[0].properties.accuracy == $need)' <<<"${res}" >/dev/null; then
+              echo "::error::${q} did not resolve to ${street} ${need}"
+              failed=1
+            fi
+          }
+          check "Chaussestraße 111, 10115 Berlin" "Chausseestraße" rooftop
+          check "Gran Vía 28, 28013 Madrid" "Gran Vía" rooftop
+          check "Getreidegase 9, 5020 Salzburg" "Getreidegasse" rooftop
+          check "Bundesplatz 3, 3005 Bern" "Bundesplatz"
+          check "Rue de Rivoli 99, 75001 Paris" "Rue de Rivoli"
+          check "Grand-Place 1, 1000 Bruxelles" "Grand-Place"
+          check "Dam 1, 1012 Amsterdam" "Dam"
+          check "Rue du Marché-aux-Herbes 17, Luxembourg" "Marché-aux-Herbes"
+          check "10 Downing Street, London" "Downing Street"
+          check "Royal Avenue 1, Belfast" "Royal Avenue"
+          check "Grafton Street, Dublin" "Grafton Street"
 
-          echo "Testing Spanish address (Madrid Gran Vía)..."
-          curl -sSf "http://127.0.0.1:8080/search?q=Gran+V%C3%ADa+28,+28013+Madrid&limit=1" \
-            | jq -e '(.features | length > 0) and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Gran Vía"))'
-
+          docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder
           docker rm test-geocoder
-          echo "All smoke tests passed on local image!"
+          exit "${failed}"
+
+      # A run on any other branch (dispatched to try a change) builds and
+      # tests but publishes nothing, so it cannot move `latest`.
       - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
@@ -159,6 +160,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push verified image to GHCR
+        if: github.ref == 'refs/heads/main'
         run: |
           DATE="${{ steps.date.outputs.date }}"
           OG_TAG="${{ steps.og_ref.outputs.short_ref }}"

@@ -1,6 +1,6 @@
 # KIVO Geocoder
 
-Self-hosted geocoding service based on [open-geocode](https://github.com/open-geocode-rs/open-geocode), pre-packaged with unified address packs for Germany (`DE`) and Spain (`ES`).
+Self-hosted geocoding service based on [open-geocode](https://github.com/open-geocode-rs/open-geocode), with one address pack covering Germany, Spain, Austria, Switzerland, France, Belgium, the Netherlands, Luxembourg, the United Kingdom and Ireland.
 
 Built to power type-ahead address validation and legal address verification in KIVO ([#3767](https://github.com/onekivo/Kivo/issues/3767)).
 
@@ -67,20 +67,23 @@ Every feature returned by `/search` includes `properties.accuracy`:
 - `street`: Street match without verified house number.
 - `place` / `centroid`: Locality, district, or administrative area fallback.
 
-## Local Build
+## Build
 
-To build the pack and container image locally:
+Everything happens inside `docker build`:
+
+1. `builder` compiles `open-geocode` at `OPEN_GEOCODE_REF`.
+2. One `pbf-<country>` stage per extract downloads it from Geofabrik and checks its published MD5 (`scripts/fetch-extract.sh`). BuildKit runs them in parallel.
+3. `pack` bind-mounts every extract and builds the pack; its scratch files are deleted in the same `RUN`, so the stage keeps only the pack. `open-geocode pack verify` checks it.
+4. The distroless runtime copies the binary and the pack. No extract or scratch file reaches the final image.
 
 ```bash
-# 1. Download extracts and build pack (requires open-geocode binary or cargo)
-bash scripts/build-pack.sh
-
-# 2. Build the Docker image
-docker build -t geocoder:local .
-
-# 3. Run
+docker build --build-arg OSM_DATE=$(date -u +%F) -t geocoder:local .
 docker run -d -p 8080:8080 geocoder:local
 ```
+
+`OSM_DATE` invalidates the download layers; without a new value Docker reuses the extracts it already has.
+
+To add a country: add a `pbf-<country>` stage with its Geofabrik name under `europe/`, a `--mount` line in the `pack` stage, and a smoke-test query in `.github/workflows/build.yml`. The United Kingdom is `great-britain` plus `ireland-and-northern-ireland`; Geofabrik's `united-kingdom` would include Northern Ireland twice.
 
 ## Data Attribution & License
 
