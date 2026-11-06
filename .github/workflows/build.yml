@@ -50,15 +50,37 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - name: Resolve latest open-geocode ref
+        id: og_ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.open_geocode_ref }}
+        run: |
+          if [ -n "${INPUT_REF}" ]; then
+            echo "Using manual input ref: ${INPUT_REF}"
+            echo "ref=${INPUT_REF}" >> "$GITHUB_OUTPUT"
+            echo "short_ref=${INPUT_REF:0:7}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Querying latest CI-green commit on open-geocode main branch..."
+            latest_sha=$(gh api 'repos/open-geocode-rs/open-geocode/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1' --jq '.workflow_runs[0].head_sha' 2>/dev/null || true)
+            if [ -z "${latest_sha}" ]; then
+              latest_sha="08813468f8fbe491e6533e9c5101e56da5e9b29e"
+              echo "API lookup returned empty; using pinned fallback ref: ${latest_sha}"
+            else
+              echo "Resolved latest CI-green ref: ${latest_sha}"
+            fi
+            echo "ref=${latest_sha}" >> "$GITHUB_OUTPUT"
+            echo "short_ref=${latest_sha:0:7}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build open-geocode binary inside builder container
         run: |
-          echo "Building open-geocode binary at commit ${OPEN_GEOCODE_REF}..."
+          ref="${{ steps.og_ref.outputs.ref }}"
+          echo "Building open-geocode binary at commit ${ref}..."
           docker build \
             --target builder \
-            --build-arg "OPEN_GEOCODE_REF=${OPEN_GEOCODE_REF}" \
+            --build-arg "OPEN_GEOCODE_REF=${ref}" \
             -t open-geocode-builder .
-
           # Extract the compiled binary to the local workspace
           container_id=$(docker create open-geocode-builder)
           docker cp "${container_id}:/src/target/release/open-geocode" ./open-geocode
@@ -83,9 +105,10 @@ jobs:
 
       - name: Build local container image for smoke testing
         run: |
+          ref="${{ steps.og_ref.outputs.ref }}"
           docker build \
             --tag geocoder:local-test \
-            --build-arg "OPEN_GEOCODE_REF=${OPEN_GEOCODE_REF}" \
+            --build-arg "OPEN_GEOCODE_REF=${ref}" \
             --label "org.opencontainers.image.title=KIVO Geocoder" \
             --label "org.opencontainers.image.description=Self-hosted geocoder for Germany and Spain based on open-geocode" \
             --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
@@ -140,11 +163,14 @@ jobs:
       - name: Push verified image to GHCR
         run: |
           DATE="${{ steps.date.outputs.date }}"
+          OG_TAG="${{ steps.og_ref.outputs.short_ref }}"
           docker tag geocoder:local-test "${IMAGE_NAME}:latest"
           docker tag geocoder:local-test "${IMAGE_NAME}:sha-${{ github.sha }}"
           docker tag geocoder:local-test "${IMAGE_NAME}:data-${DATE}"
+          docker tag geocoder:local-test "${IMAGE_NAME}:og-${OG_TAG}"
 
           docker push "${IMAGE_NAME}:latest"
           docker push "${IMAGE_NAME}:sha-${{ github.sha }}"
           docker push "${IMAGE_NAME}:data-${DATE}"
-          echo "Successfully pushed verified image tags: latest, sha-${{ github.sha }}, data-${DATE}"
+          docker push "${IMAGE_NAME}:og-${OG_TAG}"
+          echo "Successfully pushed verified image tags: latest, sha-${{ github.sha }}, data-${DATE}, og-${OG_TAG}"
