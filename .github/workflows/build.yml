@@ -61,13 +61,12 @@ jobs:
             echo "short_ref=${INPUT_REF:0:7}" >> "$GITHUB_OUTPUT"
           else
             echo "Querying latest CI-green commit on open-geocode main branch..."
-            latest_sha=$(gh api 'repos/open-geocode-rs/open-geocode/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1' --jq '.workflow_runs[0].head_sha' 2>/dev/null || true)
+            latest_sha=$(gh api 'repos/open-geocode-rs/open-geocode/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1' --jq '.workflow_runs[0].head_sha')
             if [ -z "${latest_sha}" ]; then
-              latest_sha="08813468f8fbe491e6533e9c5101e56da5e9b29e"
-              echo "API lookup returned empty; using pinned fallback ref: ${latest_sha}"
-            else
-              echo "Resolved latest CI-green ref: ${latest_sha}"
+              echo "::error::Failed to resolve latest CI-green commit from open-geocode-rs/open-geocode"
+              exit 1
             fi
+            echo "Resolved latest CI-green ref: ${latest_sha}"
             echo "ref=${latest_sha}" >> "$GITHUB_OUTPUT"
             echo "short_ref=${latest_sha:0:7}" >> "$GITHUB_OUTPUT"
           fi
