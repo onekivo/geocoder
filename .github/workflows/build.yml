@@ -121,11 +121,11 @@ jobs:
 
           echo "Testing German typo address (Chausseestraße typo from issue #3767)..."
           curl -sSf "http://127.0.0.1:8080/search?q=Chaussestra%C3%9Fe+111,+10115+Berlin&limit=1" \
-            | jq -e '.features | length > 0 and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Chausseestraße"))'
+            | jq -e '(.features | length > 0) and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Chausseestraße"))'
 
           echo "Testing Spanish address (Madrid Gran Vía)..."
           curl -sSf "http://127.0.0.1:8080/search?q=Gran+V%C3%ADa+28,+28013+Madrid&limit=1" \
-            | jq -e '.features | length > 0 and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Gran Vía"))'
+            | jq -e '(.features | length > 0) and (.features[0].properties.accuracy == "rooftop") and (.features[0].properties.label | test("Gran Vía"))'
 
           docker stop test-geocoder
           docker rm test-geocoder
