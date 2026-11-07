@@ -30,8 +30,8 @@ jobs:
   build:
     name: Build & Publish Image
     runs-on: ${{ vars.ci_runner_large || 'ubuntu-latest' }}
-    # 30 countries: about 28 GB of downloads, then the pack (59 minutes for the
-    # first ten). GitHub-hosted jobs stop at 6 hours.
+    # 30 countries: the build step took 135 minutes on a 4-core runner, of
+    # which the pack 124. GitHub-hosted jobs stop at 6 hours.
     timeout-minutes: 300
     permissions:
       contents: read
@@ -116,10 +116,14 @@ jobs:
 
           # One address per country. Every check runs before the step fails,
           # so a run shows every country that does not answer, not just the
-          # first. The label must name the street and the town: a rooftop hit
-          # in another town (`Grand-Rue 1, Luxembourg` once returned the
-          # Grand-Rue in Wasserbillig) is a wrong answer, not a match.
-          # `rooftop` marks the checks that also need the exact house.
+          # first. The street and the town are matched against the answer's
+          # own fields, not just its label, which leaves the town out in some
+          # countries. Both must match: a rooftop hit on another street
+          # (`Rua Augusta 1` once returned Rua Augusto Rosa) or in another
+          # town (`Grand-Rue 1, Luxembourg` once returned Wasserbillig) is a
+          # wrong answer, not a match. Every address below exists in
+          # OpenStreetMap with its house number. `rooftop` marks the checks
+          # that also need the exact house.
           failed=0
           check() {
             local q="$1" street="$2" town="$3" need="${4:-}"
@@ -129,11 +133,13 @@ jobs:
               failed=1
               return
             fi
-            echo "${q} -> $(jq -c '.features[0].properties | {label, accuracy}' <<<"${res}")"
+            echo "${q} -> $(jq -c '.features[0].properties | {label, accuracy, street: .address.street, locality: (.address.locality // .context.locality.name)}' <<<"${res}")"
             if ! jq -e --arg s "${street}" --arg t "${town}" --arg need "${need}" '
                 (.features | length > 0)
-                and (.features[0].properties.label | contains($s) and contains($t))
-                and ($need == "" or .features[0].properties.accuracy == $need)' <<<"${res}" >/dev/null; then
+                and (.features[0].properties as $p
+                  | ([$p.address.street, $p.name, $p.label] | map(strings) | join(" | ") | contains($s))
+                  and ([$p | .. | strings] | join(" | ") | contains($t))
+                  and ($need == "" or $p.accuracy == $need))' <<<"${res}" >/dev/null; then
               echo "::error::${q} did not resolve to ${street}, ${town} ${need}"
               failed=1
             fi
@@ -143,7 +149,7 @@ jobs:
           check "Getreidegase 9, 5020 Salzburg" "Getreidegasse" "Salzburg" rooftop
           check "Bahnhofstrasse 10, 8001 Zürich" "Bahnhofstrasse" "Zürich" rooftop
           check "Rue de Rivoli 99, 75001 Paris" "Rue de Rivoli" "Paris"
-          check "Avenue Louise 54, 1050 Bruxelles" "Avenue Louise" "" rooftop
+          check "Avenue Louise 54, 1050 Bruxelles" "Avenue Louise" "Bruxelles" rooftop
           check "Damrak 1, 1012 Amsterdam" "Damrak" "Amsterdam" rooftop
           check "Rue du Marché-aux-Herbes 17, Luxembourg" "Marché-aux-Herbes" "Luxembourg"
           check "10 Downing Street, London" "Downing Street" "Westminster"
@@ -151,7 +157,7 @@ jobs:
           check "Grafton Street, Dublin" "Grafton Street" "Dublin"
           check "Via del Corso 1, 00186 Roma" "Via del Corso" "Roma"
           check "Nowy Świat 1, 00-496 Warszawa" "Nowy Świat" "Warszawa"
-          check "Rua Augusta 1, Lisboa" "Rua Augusta" "Lisboa"
+          check "Rua Augusta 100, Lisboa" "Rua Augusta" "Lisboa"
           check "Václavské náměstí 1, Praha" "Václavské náměstí" "Praha"
           check "Hlavné námestie 1, Bratislava" "Hlavné námestie" "Bratislava"
           check "Andrássy út 1, Budapest" "Andrássy út" "Budapest"
@@ -162,13 +168,13 @@ jobs:
           check "Ερμού 1, Αθήνα" "Ερμού" "Αθήνα"
           check "Λεωφόρος Μακαρίου 1, Λευκωσία" "Μακαρίου" "Λευκωσία"
           check "Triq ir-Repubblika 1, Valletta" "Repubblika" "Valletta"
-          check "Strøget 1, København" "Strøget" "København"
+          check "Amagertorv 1, København" "Amagertorv" "København"
           check "Drottninggatan 1, Stockholm" "Drottninggatan" "Stockholm"
           check "Karl Johans gate 1, Oslo" "Karl Johans gate" "Oslo"
           check "Mannerheimintie 1, Helsinki" "Mannerheimintie" "Helsinki"
           check "Viru 1, Tallinn" "Viru" "Tallinn"
-          check "Brīvības iela 1, Rīga" "Brīvības iela" "Rīga"
-          check "Gedimino prospektas 1, Vilnius" "Gedimino prospektas" "Vilnius"
+          check "Kaļķu iela 1, Rīga" "Kaļķu iela" "Rīga"
+          check "Gedimino prospektas 1, Vilnius" "Gedimino" "Vilnius"
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder
