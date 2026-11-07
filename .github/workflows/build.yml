@@ -30,9 +30,9 @@ jobs:
   build:
     name: Build & Publish Image
     runs-on: ${{ vars.ci_runner_large || 'ubuntu-latest' }}
-    # Ten countries: about 18 GB of downloads, then the pack. GitHub-hosted
-    # jobs stop at 6 hours.
-    timeout-minutes: 240
+    # 30 countries: about 28 GB of downloads, then the pack (59 minutes for the
+    # first ten). GitHub-hosted jobs stop at 6 hours.
+    timeout-minutes: 300
     permissions:
       contents: read
       packages: write
@@ -149,6 +149,26 @@ jobs:
           check "10 Downing Street, London" "Downing Street" "Westminster"
           check "Royal Avenue 1, Belfast" "Royal Avenue" "Belfast"
           check "Grafton Street, Dublin" "Grafton Street" "Dublin"
+          check "Via del Corso 1, 00186 Roma" "Via del Corso" "Roma"
+          check "Nowy Świat 1, 00-496 Warszawa" "Nowy Świat" "Warszawa"
+          check "Rua Augusta 1, Lisboa" "Rua Augusta" "Lisboa"
+          check "Václavské náměstí 1, Praha" "Václavské náměstí" "Praha"
+          check "Hlavné námestie 1, Bratislava" "Hlavné námestie" "Bratislava"
+          check "Andrássy út 1, Budapest" "Andrássy út" "Budapest"
+          check "Prešernov trg 1, Ljubljana" "Prešernov trg" "Ljubljana"
+          check "Ilica 1, Zagreb" "Ilica" "Zagreb"
+          check "Calea Victoriei 1, București" "Calea Victoriei" "București"
+          check "бул. Витоша 1, София" "Витоша" "София"
+          check "Ερμού 1, Αθήνα" "Ερμού" "Αθήνα"
+          check "Λεωφόρος Μακαρίου 1, Λευκωσία" "Μακαρίου" "Λευκωσία"
+          check "Triq ir-Repubblika 1, Valletta" "Repubblika" "Valletta"
+          check "Strøget 1, København" "Strøget" "København"
+          check "Drottninggatan 1, Stockholm" "Drottninggatan" "Stockholm"
+          check "Karl Johans gate 1, Oslo" "Karl Johans gate" "Oslo"
+          check "Mannerheimintie 1, Helsinki" "Mannerheimintie" "Helsinki"
+          check "Viru 1, Tallinn" "Viru" "Tallinn"
+          check "Brīvības iela 1, Rīga" "Brīvības iela" "Rīga"
+          check "Gedimino prospektas 1, Vilnius" "Gedimino prospektas" "Vilnius"
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder

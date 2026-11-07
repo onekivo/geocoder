@@ -1,6 +1,6 @@
 # KIVO Geocoder
 
-Self-hosted geocoding service based on [open-geocode](https://github.com/open-geocode-rs/open-geocode), with one address pack covering Germany, Spain, Austria, Switzerland, France, Belgium, the Netherlands, Luxembourg, the United Kingdom and Ireland.
+Self-hosted geocoding service based on [open-geocode](https://github.com/open-geocode-rs/open-geocode), with one address pack covering the 27 EU countries plus Norway, Switzerland and the United Kingdom.
 
 Built to power type-ahead address validation and legal address verification in KIVO ([#3767](https://github.com/onekivo/Kivo/issues/3767)).
 
