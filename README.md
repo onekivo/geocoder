@@ -10,7 +10,7 @@ Built to power type-ahead address validation and legal address verification in K
 - **Size (30 countries, 2026-11-07 data):** a 6.35 GB pack of 104.9 M records, which is most of the image (4.2 GB compressed). The pack is memory-mapped, so serving memory grows towards the pack size as queries touch it.
 - **Build:** about 2 h 15 min on a 4-core, 16 GB GitHub runner, the pack 2 h 4 min of it. Peak build memory 9 GB, while writing records, with a 6 GB buffer budget.
 - **Typo-Tolerant:** Automatic Levenshtein typo correction and accent normalization (e.g. `Chaussestraße 111` finds `Chausseestraße 111`; `Gran Via` matches `Gran Vía`).
-- **Weekly Updates:** Automatically rebuilt every Sunday at 03:00 UTC from fresh [Geofabrik](https://download.geofabrik.de/) OpenStreetMap extracts.
+- **Monthly Updates:** Automatically rebuilt on the 15th of each month at 03:00 UTC from fresh [Geofabrik](https://download.geofabrik.de/) OpenStreetMap extracts. GitHub disables a public repository's schedules after 60 days without activity; if a month passes with no new `data-` tag, re-enable the workflow under Actions.
 
 ## Quick Start
 

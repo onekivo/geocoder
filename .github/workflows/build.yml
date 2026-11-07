@@ -2,8 +2,10 @@ name: Build and Publish Geocoder Image
 
 on:
   schedule:
-    # Weekly rebuild with latest OSM data extracts (Sundays at 03:00 UTC)
-    - cron: '0 3 * * 0'
+    # Monthly, on the 15th at 03:00 UTC, from fresh Geofabrik extracts. KIVO's
+    # geocoder-bump.yml picks the result up on the 16th. Addresses change
+    # slowly, and a build takes over two hours of runner time.
+    - cron: '0 3 15 * *'
   push:
     branches:
       - main
