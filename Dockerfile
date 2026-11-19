@@ -4,10 +4,11 @@
 # pinned here and nowhere else: build.yml reads them from this file, so a
 # scheduled build rebuilds the same code with fresh map data instead of
 # following upstream main. The fork carries the `lang` parameter
-# (open-geocode-rs/open-geocode#196); point both back at upstream once it
-# is merged and released.
+# (open-geocode-rs/open-geocode#196). The commit is also the fork's tag
+# `kivo-lang-1`, so a force-push to the PR branch cannot orphan it. Point both
+# back at upstream once the PR is merged.
 ARG OPEN_GEOCODE_REPO=https://github.com/boredland/open-geocode.git
-ARG OPEN_GEOCODE_REF=eee4a5622e54c5219ffe7f1c3764fa518f200d85
+ARG OPEN_GEOCODE_REF=7071734adb0bea39d197e0e0d61c13880b3d499a
 
 # --- open-geocode binary ------------------------------------------------------
 # Debian 13 like the runtime, so the glibc it links against matches.
