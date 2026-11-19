@@ -15,11 +15,6 @@ on:
       - 'scripts/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
-    inputs:
-      open_geocode_ref:
-        description: 'open-geocode git ref or commit SHA (leave empty for latest CI-green on main)'
-        required: false
-        default: ''
 
 concurrency:
   group: geocoder-build
@@ -51,27 +46,19 @@ jobs:
           echo "Disk space after cleanup:"
           df -h /
 
-      - name: Resolve latest open-geocode ref
+      # The Dockerfile pins the open-geocode repository and commit: a monthly
+      # build refreshes the map, never the code, so a reviewed commit cannot
+      # be swapped for an unreviewed one by the schedule.
+      - name: Read pinned open-geocode ref
         id: og_ref
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_REF: ${{ inputs.open_geocode_ref }}
         run: |
-          if [ -n "${INPUT_REF}" ]; then
-            echo "Using manual input ref: ${INPUT_REF}"
-            echo "ref=${INPUT_REF}" >> "$GITHUB_OUTPUT"
-            echo "short_ref=${INPUT_REF:0:7}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Querying latest CI-green commit on open-geocode main branch..."
-            latest_sha=$(gh api 'repos/open-geocode-rs/open-geocode/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1' --jq '.workflow_runs[0].head_sha')
-            if [ -z "${latest_sha}" ]; then
-              echo "::error::Failed to resolve latest CI-green commit from open-geocode-rs/open-geocode"
-              exit 1
-            fi
-            echo "Resolved latest CI-green ref: ${latest_sha}"
-            echo "ref=${latest_sha}" >> "$GITHUB_OUTPUT"
-            echo "short_ref=${latest_sha:0:7}" >> "$GITHUB_OUTPUT"
+          ref=$(sed -n 's/^ARG OPEN_GEOCODE_REF=//p' Dockerfile)
+          if ! [[ "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Dockerfile does not pin OPEN_GEOCODE_REF to a 40-character commit"
+            exit 1
           fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "short_ref=${ref:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Get current date tag
         id: date
@@ -86,7 +73,6 @@ jobs:
         run: |
           docker build \
             --tag geocoder:local-test \
-            --build-arg "OPEN_GEOCODE_REF=${{ steps.og_ref.outputs.ref }}" \
             --build-arg "OSM_DATE=${{ steps.date.outputs.date }}" \
             --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
@@ -128,9 +114,9 @@ jobs:
           # that also need the exact house.
           failed=0
           check() {
-            local q="$1" street="$2" town="$3" need="${4:-}"
+            local q="$1" street="$2" town="$3" need="${4:-}" lang="${5:-}"
             local res
-            if ! res=$(curl -sSf --get --data-urlencode "q=${q}" --data limit=1 http://127.0.0.1:8080/search); then
+            if ! res=$(curl -sSf --get --data-urlencode "q=${q}" --data limit=1 ${lang:+--data "lang=${lang}"} http://127.0.0.1:8080/geocode); then
               echo "::error::${q}: request failed"
               failed=1
               return
@@ -177,6 +163,12 @@ jobs:
           check "Viru 1, Tallinn" "Viru" "Tallinn"
           check "Kaļķu iela 1, Rīga" "Kaļķu iela" "Rīga"
           check "Gedimino prospektas 1, Vilnius" "Gedimino" "Vilnius"
+          # `lang` answers in Spanish where the map's street is Valencian: the
+          # Spanish tax register writes `Calle del Almirante Cadarso`, the
+          # map's own `addr:street` is `Carrer de l'Almirall Cadarso`. The
+          # map's postcode for this house is 46005; the query names it so the
+          # house ranks above its street.
+          check "Almirante Cadarso 26, 46005 Valencia" "Calle del Almirante Cadarso" "Valencia" rooftop es
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder

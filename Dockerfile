@@ -1,17 +1,23 @@
 # syntax=docker/dockerfile:1
 
-# The open-geocode commit to build. CI passes the newest one whose CI passed
-# on open-geocode's main; the default is the last one this repo verified.
-ARG OPEN_GEOCODE_REF=08813468f8fbe491e6533e9c5101e56da5e9b29e
+# The open-geocode source to build: a repository and a commit in it. Both are
+# pinned here and nowhere else: build.yml reads them from this file, so a
+# scheduled build rebuilds the same code with fresh map data instead of
+# following upstream main. The fork carries the `lang` parameter
+# (open-geocode-rs/open-geocode#196); point both back at upstream once it
+# is merged and released.
+ARG OPEN_GEOCODE_REPO=https://github.com/boredland/open-geocode.git
+ARG OPEN_GEOCODE_REF=eee4a5622e54c5219ffe7f1c3764fa518f200d85
 
 # --- open-geocode binary ------------------------------------------------------
 # Debian 13 like the runtime, so the glibc it links against matches.
 FROM rust:1.99.1-slim-trixie@sha256:7eab7ce19273ce785e0ca7578bdf7bc1fcbae621775a8197379a04c9f6e03cd5 AS builder
+ARG OPEN_GEOCODE_REPO
 ARG OPEN_GEOCODE_REF
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN git clone https://github.com/open-geocode-rs/open-geocode.git . \
+RUN git clone "${OPEN_GEOCODE_REPO}" . \
  && git checkout "${OPEN_GEOCODE_REF}" \
  && cargo build --release --locked --bin open-geocode \
  && strip target/release/open-geocode
@@ -102,6 +108,10 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 # ten countries with 8192). The runner has 16 GB, so past this budget the build
 # spills to scratch on disk instead.
 ARG PACK_MEMORY_MB=6144
+# Languages whose `name:<lang>` the pack keeps, so a request's `lang` can
+# answer in them. Spain's tax register writes Spanish street names, where the
+# map's own street name is Valencian or Catalan in part of the country.
+ARG PACK_LANGUAGES=es
 COPY --from=builder /src/target/release/open-geocode /usr/local/bin/open-geocode
 RUN --mount=type=bind,from=pbf-germany,source=/pbf,target=/in/de \
     --mount=type=bind,from=pbf-spain,source=/pbf,target=/in/es \
@@ -139,7 +149,8 @@ RUN --mount=type=bind,from=pbf-germany,source=/pbf,target=/in/de \
     open-geocode pack build ${inputs} \
       --pack /packs/pack \
       --scratch-dir /scratch \
-      --memory-budget-mb "${PACK_MEMORY_MB}"; \
+      --memory-budget-mb "${PACK_MEMORY_MB}" \
+      --lang "${PACK_LANGUAGES}"; \
     rm -rf /scratch; \
     open-geocode pack verify --pack /packs/pack; \
     cat /packs/pack/generations/*/audit/build-report.json | head -c 2000; echo; \
