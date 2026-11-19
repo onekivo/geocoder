@@ -165,10 +165,24 @@ jobs:
           check "Gedimino prospektas 1, Vilnius" "Gedimino" "Vilnius"
           # `lang` answers in Spanish where the map's street is Valencian: the
           # Spanish tax register writes `Calle del Almirante Cadarso`, the
-          # map's own `addr:street` is `Carrer de l'Almirall Cadarso`. The
-          # map's postcode for this house is 46005; the query names it so the
-          # house ranks above its street.
-          check "Almirante Cadarso 26, 46005 Valencia" "Calle del Almirante Cadarso" "Valencia" rooftop es
+          # map's own `addr:street` is `Carrer de l'Almirall Cadarso`. Judged
+          # on the first house of the answer, not on `features[0]`: in the full
+          # pack a street of that name ranks above its house, and the
+          # translation is what is tested here, not the rank.
+          house() {
+            curl -sSf --get --data-urlencode "q=Almirante Cadarso 26, 46005 Valencia" \
+              --data country=ES --data layer=address --data limit=5 "$@" \
+              http://127.0.0.1:8080/geocode \
+              | jq -c '[.features[] | select(.properties.layer == "address")][0].properties.address.street // empty'
+          }
+          if [ "$(house --data lang=es)" != '"Calle del Almirante Cadarso"' ]; then
+            echo "::error::lang=es did not give Calle del Almirante Cadarso for Almirante Cadarso 26, Valencia"
+            failed=1
+          fi
+          if [ "$(house)" != "\"Carrer de l'Almirall Cadarso\"" ]; then
+            echo "::error::without lang the map's own street name was not Carrer de l'Almirall Cadarso"
+            failed=1
+          fi
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder
