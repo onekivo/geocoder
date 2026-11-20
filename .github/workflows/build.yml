@@ -182,14 +182,13 @@ jobs:
           if [ "$(house)" != "\"Carrer de l'Almirall Cadarso\"" ]; then
             echo "::error::without lang the map's own street name was not Carrer de l'Almirall Cadarso"
             failed=1
-          fi
+          echo "lang=es street: $(house --data lang=es)"
 
           docker stats --no-stream --format 'serving memory after the checks: {{.MemUsage}}' test-geocoder
           docker stop test-geocoder
           docker rm test-geocoder
           exit "${failed}"
 
-      # A run on any other branch (dispatched to try a change) builds and
       # tests but publishes nothing, so it cannot move `latest`.
       - name: Log in to GitHub Container Registry
         if: github.ref == 'refs/heads/main'
