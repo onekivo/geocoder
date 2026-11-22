@@ -8,7 +8,7 @@
 # `kivo-lang-1`, so a force-push to the PR branch cannot orphan it. Point both
 # back at upstream once the PR is merged.
 ARG OPEN_GEOCODE_REPO=https://github.com/boredland/open-geocode.git
-ARG OPEN_GEOCODE_REF=cfccb8f32b3d33dd20c7067e09f8526092051ebd
+ARG OPEN_GEOCODE_REF=6ef1fe26399597b9716d6bf7ee7171c6ad1f1eec
 
 # --- open-geocode binary ------------------------------------------------------
 # Debian 13 like the runtime, so the glibc it links against matches.
